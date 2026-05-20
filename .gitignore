@@ -1,0 +1,14 @@
+.DS_Store
+.env
+bin/
+dist/
+coverage.out
+*.test
+*.log
+
+# Local benchmark/output artifacts.
+artifacts/
+screenshots/
+
+# Go dependency cache is external; this project should commit source only.
+vendor/

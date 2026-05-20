@@ -1,0 +1,61 @@
+services:
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6379:6379"
+
+  mock-api:
+    build:
+      context: .
+      dockerfile: examples/mock-api/Dockerfile
+    environment:
+      PORT: "3000"
+    expose:
+      - "3000"
+
+  gateway:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    environment:
+      GATEKEEPER_CONFIG: /etc/gatekeeper/gateway.yaml
+    volumes:
+      - ./deploy/docker/gateway.yaml:/etc/gatekeeper/gateway.yaml:ro
+    expose:
+      - "8080"
+      - "9090"
+    depends_on:
+      - redis
+      - mock-api
+
+  load-balancer:
+    image: nginx:1.27-alpine
+    ports:
+      - "8080:8080"
+    volumes:
+      - ./deploy/docker/nginx.conf:/etc/nginx/nginx.conf:ro
+    depends_on:
+      - gateway
+
+  prometheus:
+    image: prom/prometheus:v2.55.0
+    ports:
+      - "9090:9090"
+    volumes:
+      - ./deploy/docker/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+    depends_on:
+      - gateway
+
+  grafana:
+    image: grafana/grafana:11.2.2
+    ports:
+      - "3000:3000"
+    environment:
+      GF_SECURITY_ADMIN_USER: admin
+      GF_SECURITY_ADMIN_PASSWORD: admin
+      GF_USERS_ALLOW_SIGN_UP: "false"
+    volumes:
+      - ./deploy/docker/grafana/provisioning:/etc/grafana/provisioning:ro
+      - ./deploy/docker/grafana/dashboards:/var/lib/grafana/dashboards:ro
+    depends_on:
+      - prometheus

@@ -1,0 +1,11 @@
+apiVersion: 1
+
+providers:
+  - name: Gatekeeper
+    orgId: 1
+    folder: Gatekeeper
+    type: file
+    disableDeletion: true
+    updateIntervalSeconds: 10
+    options:
+      path: /var/lib/grafana/dashboards

@@ -1,0 +1,82 @@
+server:
+  port: 8080
+  metrics_port: 9090
+
+redis:
+  url: redis://redis:6379
+
+routes:
+  - name: products
+    path_prefix: /api/products
+    upstream_url: http://mock-api:3000/products
+    rate_limit:
+      enabled: true
+      key: ip
+      limit: 100
+      window_seconds: 60
+    cache:
+      enabled: true
+      ttl_seconds: 30
+    retry:
+      enabled: true
+      attempts: 2
+      base_delay_ms: 50
+    circuit_breaker:
+      enabled: true
+      failure_threshold: 5
+      cooldown_seconds: 20
+
+  - name: slow
+    path_prefix: /api/slow
+    upstream_url: http://mock-api:3000/slow
+    rate_limit:
+      enabled: true
+      key: ip
+      limit: 60
+      window_seconds: 60
+    cache:
+      enabled: false
+    retry:
+      enabled: true
+      attempts: 2
+      base_delay_ms: 75
+    circuit_breaker:
+      enabled: true
+      failure_threshold: 5
+      cooldown_seconds: 20
+
+  - name: flaky
+    path_prefix: /api/flaky
+    upstream_url: http://mock-api:3000/flaky
+    rate_limit:
+      enabled: true
+      key: header
+      header: X-User-ID
+      limit: 40
+      window_seconds: 60
+    cache:
+      enabled: false
+    retry:
+      enabled: true
+      attempts: 3
+      base_delay_ms: 50
+    circuit_breaker:
+      enabled: true
+      failure_threshold: 3
+      cooldown_seconds: 15
+
+  - name: error
+    path_prefix: /api/error
+    upstream_url: http://mock-api:3000/error
+    rate_limit:
+      enabled: false
+    cache:
+      enabled: false
+    retry:
+      enabled: true
+      attempts: 2
+      base_delay_ms: 50
+    circuit_breaker:
+      enabled: true
+      failure_threshold: 3
+      cooldown_seconds: 15
