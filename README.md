@@ -1,6 +1,25 @@
-A lightweight distributed API gateway that adds rate limiting, caching, retries, circuit breaking, and observability to backend services without changing application code.
+# GateKeeper
 
-It is built as a backend infrastructure project: a Go gateway running across multiple replicas, Redis-backed shared state, Prometheus metrics, Grafana dashboards, and k6 load tests that measure p95/p99 latency and failure behavior.
+![Go](https://img.shields.io/badge/Go-1.23-00ADD8?logo=go&logoColor=white)
+![Redis](https://img.shields.io/badge/Redis-shared_state-DC382D?logo=redis&logoColor=white)
+![Docker](https://img.shields.io/badge/Docker-Compose-2496ED?logo=docker&logoColor=white)
+![Prometheus](https://img.shields.io/badge/Prometheus-metrics-E6522C?logo=prometheus&logoColor=white)
+![Grafana](https://img.shields.io/badge/Grafana-dashboards-F46800?logo=grafana&logoColor=white)
+![k6](https://img.shields.io/badge/k6-load_tested-7D64FF?logo=k6&logoColor=white)
+
+A distributed API gateway in Go — adds rate limiting, caching, retries, circuit breaking, and Prometheus observability to backend services across multiple replicas without changing application code.
+
+## What This Demonstrates
+
+| Skill | Implementation |
+|---|---|
+| Distributed systems | 3 gateway replicas sharing state through Redis; global rate limits enforced atomically across all processes |
+| Go backend engineering | Idiomatic Go: interfaces, goroutines, structured JSON logging, YAML config parsing |
+| Redis patterns | Atomic sliding-window rate limiter implemented as a Lua script to eliminate race conditions under concurrent replicas |
+| Resilience engineering | Circuit breaker, exponential-backoff retry, and fail-open degradation when Redis is unavailable |
+| Observability | 7 Prometheus counters/histograms, provisioned Grafana dashboard, structured per-request logs |
+| Performance testing | k6 load tests across 5 scenarios; p95/p99 latency measured at up to 1,000 RPS with active circuit breaking and retries |
+| Container orchestration | Multi-service Docker Compose stack: Nginx load balancer, 3 gateway replicas, Redis, Prometheus, Grafana |
 
 ## Architecture
 
@@ -22,6 +41,20 @@ flowchart LR
   Grafana["Grafana"] --> Prom
 ```
 
+## Benchmark Results
+
+| Scenario | Replicas | RPS | p95 latency | p99 latency | Notes |
+|---|---:|---:|---:|---:|---|
+| Baseline smoke | 3 | 18.69 | 8.73ms | 18.38ms | Sanity pass |
+| Rate-limit smoke | 3 | 200.01 | 6.42ms | 11.75ms | Global sliding-window active |
+| Baseline products | 1 | 244.99 | 6.02ms | 46.96ms | Single-instance ceiling |
+| Baseline products | 3 | 500.01 | 4.40ms | 8.31ms | **2× throughput, 5× p99 improvement** vs. 1 replica |
+| Cache pressure | 3 | 999.94 | 2.20ms | 6.24ms | ~1,000 RPS via Redis cache |
+| Rate-limit pressure | 3 | 200.02 | 6.11ms | 12.17ms | Global enforcement across all replicas |
+| Upstream failure | 3 | 100.02 | 7.13ms | 13.68ms | Retries and circuit breaking active |
+
+Scaling from 1 → 3 replicas doubled throughput and cut p99 latency from 46.96ms to 8.31ms on the products route.
+
 ## Features
 
 - Reverse proxy with YAML route configuration.
@@ -36,42 +69,31 @@ flowchart LR
 
 ## Quickstart
 
-Install the local developer tools:
-
 ```bash
+# Install tools (macOS)
 brew install go k6
-```
 
-Start the full stack:
-
-```bash
+# Start the full stack
 docker compose up --build --scale gateway=3
 ```
 
-Open:
-
-- Gateway: <http://localhost:8080>
-- Prometheus: <http://localhost:9090>
-- Grafana: <http://localhost:3000> using `admin` / `admin`
-
-Try the gateway:
+| Service | URL | Credentials |
+|---|---|---|
+| Gateway | http://localhost:8080 | — |
+| Prometheus | http://localhost:9090 | — |
+| Grafana | http://localhost:3000 | `admin` / `admin` |
 
 ```bash
+# Exercise the gateway
 curl -i http://localhost:8080/api/products
 curl -i http://localhost:8080/api/flaky -H 'X-User-ID: demo-user'
 curl -i http://localhost:8080/api/error
 curl -s http://localhost:9090/metrics | grep gatekeeper
-```
 
-Run tests:
-
-```bash
+# Unit tests
 go test ./...
-```
 
-Run load tests:
-
-```bash
+# Load tests
 k6 run loadtests/baseline.js
 k6 run loadtests/cache.js
 k6 run loadtests/rate_limit.js
@@ -81,7 +103,7 @@ k6 run loadtests/scale.js
 
 ## Configuration
 
-Routes live in [`deploy/docker/gateway.yaml`](deploy/docker/gateway.yaml).
+Routes are defined in [`deploy/docker/gateway.yaml`](deploy/docker/gateway.yaml):
 
 ```yaml
 routes:
@@ -108,46 +130,36 @@ routes:
 
 Rate-limit key modes:
 
-- `key: ip` uses the first `X-Forwarded-For` address or remote IP.
-- `key: header` uses the configured `header` field.
-- `key: header:X-API-Key` reads that header directly.
+| Mode | Behavior |
+|---|---|
+| `key: ip` | Uses `X-Forwarded-For` or remote IP |
+| `key: header` | Uses the configured `header` field |
+| `key: header:X-API-Key` | Reads the named header directly |
 
-If Redis is unavailable, the gateway fails open for rate limiting and bypasses cache so availability wins over strict enforcement.
+If Redis is unavailable, the gateway fails open — rate limiting and cache are bypassed so availability wins over strict enforcement.
 
 ## Metrics
 
-Prometheus exposes the main project proof points:
+| Metric | Description |
+|---|---|
+| `gatekeeper_requests_total` | Request count by route and status |
+| `gatekeeper_request_duration_seconds` | Latency histogram (p50 / p95 / p99) |
+| `gatekeeper_rate_limited_total` | Rate-limited requests by route |
+| `gatekeeper_cache_events_total` | Cache hits and misses |
+| `gatekeeper_upstream_errors_total` | Upstream error count |
+| `gatekeeper_retries_total` | Retry attempts by route |
+| `gatekeeper_circuit_state` | Circuit breaker state (0 = closed, 1 = open) |
 
-- `gatekeeper_requests_total`
-- `gatekeeper_request_duration_seconds`
-- `gatekeeper_rate_limited_total`
-- `gatekeeper_cache_events_total`
-- `gatekeeper_upstream_errors_total`
-- `gatekeeper_retries_total`
-- `gatekeeper_circuit_state`
-
-The Grafana dashboard visualizes request rate, p95/p99 latency, rate-limited requests, cache hit rate, upstream errors, and circuit state.
-
-## Benchmark Log
-
-Full benchmark runs should compare `--scale gateway=1` against `--scale gateway=3`.
-
-| Scenario | Replicas | RPS | p95 latency | p99 latency | Notes |
-| --- | ---: | ---: | ---: | ---: | --- |
-| Baseline smoke | 3 | 18.69 | 8.73ms | 18.38ms | `k6 run --vus 2 --duration 5s loadtests/baseline.js` |
-| Rate-limit smoke | 3 | 200.01 | 6.42ms | 11.75ms | `k6 run --vus 10 --duration 5s loadtests/rate_limit.js` |
-| Baseline products | 1 | 244.99 | 6.02ms | 46.96ms | Maxed out single-instance capacity |
-| Baseline products | 3 | 500.01 | 4.40ms | 8.31ms | Handled with ease (horizontal scaling) |
-| Cache pressure | 3 | 999.94 | 2.20ms | 6.24ms | Ultra-low latency Redis cache hits |
-| Rate-limit pressure | 3 | 200.02 | 6.11ms | 12.17ms | Global sliding-window enforcement |
-| Upstream failure | 3 | 100.02 | 7.13ms | 13.68ms | Handled retries & circuit breaking |
+The Grafana dashboard visualizes request rate, p95/p99 latency, cache hit rate, upstream errors, and circuit state in real time.
 
 ## Failure Modes
 
-- **Redis unavailable:** rate limiting fails open, cache is bypassed, requests continue to upstream.
-- **Upstream intermittent 5xx:** gateway retries with exponential backoff, records retry/error metrics, and returns the final upstream response if all attempts fail.
-- **Upstream repeated failure:** circuit breaker opens after the configured threshold and returns `503` until cooldown allows a half-open trial.
-- **Multiple gateway replicas:** all replicas use Redis as shared state, so limits are enforced globally instead of per process.
+| Failure | Behavior |
+|---|---|
+| Redis unavailable | Fails open — rate limiting and cache bypass; requests continue to upstream |
+| Upstream intermittent 5xx | Retries with exponential backoff; records retry and error metrics per attempt |
+| Upstream sustained failure | Circuit breaker opens after threshold; returns `503` until cooldown half-open trial |
+| Multiple gateway replicas | All replicas share Redis state — limits are enforced globally, not per process |
 
 ## Resume Bullet
 
