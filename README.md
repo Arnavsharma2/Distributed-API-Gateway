@@ -160,7 +160,3 @@ The Grafana dashboard visualizes request rate, p95/p99 latency, cache hit rate, 
 | Upstream intermittent 5xx | Retries with exponential backoff; records retry and error metrics per attempt |
 | Upstream sustained failure | Circuit breaker opens after threshold; returns `503` until cooldown half-open trial |
 | Multiple gateway replicas | All replicas share Redis state — limits are enforced globally, not per process |
-
-## Resume Bullet
-
-> Built a distributed API gateway in Go with Redis-backed sliding-window rate limiting, route-level caching, circuit breaking, Prometheus/Grafana observability, and k6 load tests across 3 gateway replicas, measuring p95/p99 latency and failure behavior under Redis/upstream outages.
